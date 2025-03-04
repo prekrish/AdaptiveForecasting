@@ -1,0 +1,16 @@
+pandas>=1.0.0
+numpy>=1.18.0
+matplotlib>=3.1.0
+sktime>=0.27.0
+scikit-learn>=0.24.0
+
+# Optional dependencies
+# Uncomment to install
+# mlflow>=1.0.0
+
+# Development dependencies
+# Uncomment to install
+# pytest>=6.0.0
+# black>=21.5b2
+# flake8>=3.9.0
+# sphinx>=4.0.0 
