@@ -1,6 +1,8 @@
 """
 Metrics calculation and evaluation utilities.
 """
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
 
 import pandas as pd
 import numpy as np

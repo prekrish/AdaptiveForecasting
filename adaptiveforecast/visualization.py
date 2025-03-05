@@ -1,7 +1,8 @@
 """
 Visualization utilities for the AdaptiveForecaster.
 """
-
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np

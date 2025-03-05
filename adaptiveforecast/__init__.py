@@ -1,18 +1,29 @@
 """
-Adaptive Forecaster - A user-friendly wrapper for time series forecasting using sktime
-===================================================================================
+AdaptiveForecaster - A simplified, user-friendly interface for time series forecasting using sktime.
 
-Provides a simple interface for users to perform time series forecasting by
-abstracting away the complexities of underlying algorithms and processes.
-
-Classes
--------
-AdaptiveForecaster
-    Main forecasting interface class that simplifies working with sktime.
+This package provides an easy-to-use API for time series forecasting with support for:
+- Multiple forecasting algorithms (ARIMA, ETS, Naive, etc.)
+- Algorithm-specific transformations
+- Automatic hyperparameter tuning via grid search
+- Cross-validation
+- Visualization of forecasts
 """
 
-__version__ = '0.1.0'
+# Suppress common warnings
+import warnings
+from warnings import simplefilter
+simplefilter(action='ignore', category=FutureWarning)
+warnings.filterwarnings("ignore", message="'force_all_finite' was renamed to 'ensure_all_finite'")
+warnings.filterwarnings("ignore", message="The user-specified parameters provided alongside auto=True in AutoETS may not be respected")
 
-from adaptiveforecast.core import AdaptiveForecaster
+__version__ = "0.1.0"
+
+# Import main class for easy access
+from adaptiveforecast.forecaster import AdaptiveForecaster
+
+# Make key modules available at package level
+from adaptiveforecast import models
+from adaptiveforecast import transformations
+from adaptiveforecast import visualization
 
 __all__ = ['AdaptiveForecaster']
