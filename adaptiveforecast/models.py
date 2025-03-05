@@ -14,6 +14,43 @@ from sktime.transformations.series.boxcox import BoxCoxTransformer
 from sktime.transformations.series.lag import Lag
 from sktime.transformations.series.impute import Imputer
 
+def _create_transformer_from_string(transform_name, seasonal_period):
+    """Create transformer from string name."""
+    transform_name = transform_name.lower()
+    transformers = {
+        'deseasonalize': lambda: ("deseasonalize", Deseasonalizer(sp=seasonal_period)),
+        'detrend': lambda: ("detrend", Detrender()),
+        'boxcox': lambda: ("boxcox", BoxCoxTransformer()),
+        'lag': lambda: ("lag", Lag(lags=[1, 2, 3])),
+        'impute': lambda: ("impute", Imputer(method="drift", missing_values=None))
+    }
+    
+    return transformers.get(transform_name, lambda: None)()
+
+def _create_transformer_from_dict(transform_dict, seasonal_period):
+    """Create transformer from dictionary configuration."""
+    transform_name = transform_dict['name'].lower()
+    
+    if transform_name == 'impute':
+        return ("impute", Imputer(
+            method=transform_dict.get('method', 'drift'),
+            missing_values=transform_dict.get('missing_values', None),
+            value=transform_dict.get('value', None)
+        ))
+    
+    elif transform_name == 'deseasonalize':
+        return ("deseasonalize", Deseasonalizer(
+            sp=seasonal_period,
+            model=transform_dict.get('model', 'additive')
+        ))
+    
+    elif transform_name == 'detrend':
+        return ("detrend", Detrender(
+            model=transform_dict.get('model', 'linear')
+        ))
+    
+    return None
+
 def get_algorithm(name, transformations=None, seasonal_period=None):
     """
     Get a forecasting algorithm by name.
@@ -32,109 +69,64 @@ def get_algorithm(name, transformations=None, seasonal_period=None):
     object
         A sktime forecaster instance.
     """
-    # Create base forecaster
-    if name.lower() == 'naive':
-        algorithm = NaiveForecaster(strategy="mean")
-    elif name.lower() == 'theta':
-        algorithm = ThetaForecaster()
-    elif name.lower() == 'arima':
-        algorithm = AutoARIMA(
+    algorithm = _create_base_algorithm(name.lower(), seasonal_period)
+    
+    if not transformations:
+        return algorithm
+        
+    transformers = _process_transformations(transformations, seasonal_period)
+    if not transformers:
+        return algorithm
+        
+    transformers.append(("forecaster", algorithm))
+    return TransformedTargetForecaster(steps=transformers)
+
+def _create_base_algorithm(name, seasonal_period):
+    """Create base forecasting algorithm."""
+    algorithms = {
+        'naive': lambda: NaiveForecaster(strategy="mean"),
+        'theta': lambda: ThetaForecaster(),
+        'arima': lambda: AutoARIMA(
             start_p=1, start_q=1, max_p=3, max_q=3, 
             seasonal=seasonal_period is not None,
-            sp=seasonal_period,
-            d=1, max_d=2,
+            sp=seasonal_period, d=1, max_d=2,
             suppress_warnings=True
-        )
-    elif name.lower() == 'ets':
-        algorithm = AutoETS(
+        ),
+        'ets': lambda: AutoETS(
             auto=True, 
             seasonal=seasonal_period is not None,
             sp=seasonal_period
-        )
-    elif name.lower() == 'exp_smoothing':
-        algorithm = ExponentialSmoothing(
+        ),
+        'exp_smoothing': lambda: ExponentialSmoothing(
             seasonal=seasonal_period is not None,
             sp=seasonal_period
         )
-    else:
+    }
+    
+    if name not in algorithms:
         raise ValueError(f"Unknown algorithm: {name}")
     
-    # Apply transformations if specified
-    if transformations:
-        transformers = []
-        
-        # Process each transformation
-        for transform in transformations:
-            if transform is None:
-                continue
-                
-            # Handle string transformations
-            if isinstance(transform, str):
-                transform_name = transform.lower()
-                
-                if transform_name == 'deseasonalize':
-                    transformers.append(
-                        ("deseasonalize", Deseasonalizer(sp=seasonal_period))
-                    )
-                elif transform_name == 'detrend':
-                    transformers.append(
-                        ("detrend", Detrender())
-                    )
-                elif transform_name == 'boxcox':
-                    transformers.append(
-                        ("boxcox", BoxCoxTransformer())
-                    )
-                elif transform_name == 'lag':
-                    lag_values = [1, 2, 3]  # Example lag values
-                    transformers.append(
-                        ("lag", Lag(lags=lag_values))
-                    )
-                elif transform_name == 'impute':
-                    transformers.append(
-                        ("impute", Imputer(method="drift", missing_values=None))
-                    )
-            
-            # Handle dictionary transformations
-            elif isinstance(transform, dict) and 'name' in transform:
-                transform_name = transform['name'].lower()
-                
-                if transform_name == 'impute':
-                    # Extract parameters
-                    method = transform.get('method', 'drift')
-                    missing_values = transform.get('missing_values', None)
-                    value = transform.get('value', None)
-                    
-                    transformers.append(
-                        ("impute", Imputer(
-                            method=method, 
-                            missing_values=missing_values,
-                            value=value
-                        ))
-                    )
-                elif transform_name == 'deseasonalize':
-                    model = transform.get('model', 'additive')
-                    transformers.append(
-                        ("deseasonalize", Deseasonalizer(
-                            sp=seasonal_period,
-                            model=model
-                        ))
-                    )
-                elif transform_name == 'detrend':
-                    model = transform.get('model', 'linear')
-                    transformers.append(
-                        ("detrend", Detrender(
-                            model=model
-                        ))
-                    )
-        
-        if transformers:
-            # Add the forecaster as the final step
-            transformers.append(("forecaster", algorithm))
-            
-            # Create the transformed target forecaster
-            algorithm = TransformedTargetForecaster(steps=transformers)
+    return algorithms[name]()
+
+def _process_transformations(transformations, seasonal_period):
+    """Process and create transformation steps."""
+    transformers = []
     
-    return algorithm
+    for transform in transformations:
+        if transform is None:
+            continue
+            
+        if isinstance(transform, str):
+            transformer = _create_transformer_from_string(transform, seasonal_period)
+        elif isinstance(transform, dict) and 'name' in transform:
+            transformer = _create_transformer_from_dict(transform, seasonal_period)
+        else:
+            continue
+            
+        if transformer:
+            transformers.append(transformer)
+            
+    return transformers
 
 def get_param_grid(algorithm_name, grid_search):
     """

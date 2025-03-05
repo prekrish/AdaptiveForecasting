@@ -74,66 +74,31 @@ class AdaptiveForecaster:
         "rmse": MeanSquaredError(square_root=True)
     }
     
-    def __init__(
-        self,
-        df: Union[pd.DataFrame, pd.Series],
-        target: Optional[str] = None,
-        date_column: Optional[str] = None,
-        forecast_horizon: int = 10,
-        test_size: Union[float, int] = 0.2,
-        algorithms: Union[List[str], str] = None,
-        transformations: Union[List[str], str, Dict[str, List[str]]] = None,
-        seasonal_period: Optional[int] = None,
-        grid_search: Union[bool, Dict] = False,
-        cross_validation: Union[bool, Dict] = False,
-        scoring: str = "mae"
-    ):
-        # Store input parameters
+    def __init__(self, df, target=None, date_column=None, forecast_horizon=10, 
+                 test_size=0.2, algorithms=None, transformations=None, 
+                 seasonal_period=None, grid_search=False, cross_validation=False, 
+                 scoring="mae"):
+        # Initialize with default algorithms if None
+        self.algorithms = ['naive', 'arima', 'ets'] if algorithms is None else \
+                         [algorithms] if isinstance(algorithms, str) else algorithms
+        
+        # Process transformations once
+        self.transformations = self._process_transformations(transformations)
+        
+        # Store other parameters
         self.df = df
         self.target = target
         self.date_column = date_column
         self.forecast_horizon = forecast_horizon
         self.test_size = test_size
         self.seasonal_period = seasonal_period
+        self.grid_search = grid_search
+        self.grid_search_params = grid_search if isinstance(grid_search, dict) else {}
+        self.cross_validation = cross_validation
+        self.cv_params = cross_validation if isinstance(cross_validation, dict) else {}
         self.scoring = scoring
         
-        # Process algorithms
-        if algorithms is None:
-            self.algorithms = ['naive', 'arima', 'ets']
-        elif isinstance(algorithms, str):
-            self.algorithms = [algorithms]
-        else:
-            self.algorithms = algorithms
-            
-        # Process transformations
-        if transformations is None:
-            self.transformations = {}
-        elif isinstance(transformations, str):
-            self.transformations = {algo: [transformations] for algo in self.algorithms}
-        elif isinstance(transformations, list):
-            self.transformations = {algo: transformations for algo in self.algorithms}
-        elif isinstance(transformations, dict):
-            self.transformations = transformations
-        else:
-            self.transformations = {}
-            
-        # Process grid search
-        if isinstance(grid_search, bool):
-            self.grid_search = grid_search
-            self.grid_search_params = {}
-        else:
-            self.grid_search = True
-            self.grid_search_params = grid_search or {}
-            
-        # Process cross-validation
-        if isinstance(cross_validation, bool):
-            self.cross_validation = cross_validation
-            self.cv_params = {}
-        else:
-            self.cross_validation = True
-            self.cv_params = cross_validation or {}
-            
-        # Initialize other attributes
+        # Initialize result containers
         self.data = None
         self.y_train = None
         self.y_test = None
@@ -147,6 +112,18 @@ class AdaptiveForecaster:
         # Prepare data
         self._prepare_data()
         
+    def _process_transformations(self, transformations):
+        """Helper method to process transformations configuration."""
+        if transformations is None:
+            return {}
+        elif isinstance(transformations, str):
+            return {algo: [transformations] for algo in self.algorithms}
+        elif isinstance(transformations, list):
+            return {algo: transformations for algo in self.algorithms}
+        elif isinstance(transformations, dict):
+            return transformations
+        return {}
+
     def _prepare_data(self):
         """Prepare the data for forecasting."""
         # Handle DataFrame vs Series
@@ -176,114 +153,56 @@ class AdaptiveForecaster:
         
     def fit(self):
         """Fit all forecasting models."""
-        self.forecasters = {}
-        self.cv_results = {}
-        
-        # Create train-test split
-        self.y_train, self.y_test = temporal_train_test_split(
-            self.df, test_size=self.test_size
-        )
-        
-        # Create forecast horizon
-        self.fh = ForecastingHorizon(
-            np.arange(1, self.forecast_horizon + 1),
-            is_relative=True
-        )
-        
-        # Fit each algorithm
         for name in self.algorithms:
-            print(f"Fitting {name}...")
             try:
-                # Get transformations for this algorithm
-                if isinstance(self.transformations, dict) and self.transformations is not None:
-                    algo_transforms = self.transformations.get(name, None)
-                else:
-                    algo_transforms = self.transformations
-                
-                # Create algorithm
-                algorithm = get_algorithm(name, algo_transforms, self.seasonal_period)
-                
-                # Check if grid search is enabled
-                if self.grid_search:
-                    # Get base parameter grid for the algorithm
-                    param_grid = get_param_grid(name, self.grid_search_params if isinstance(self.grid_search_params, dict) else self.grid_search)
-                    
-                    # Add transformer parameters if applicable
-                    if isinstance(algo_transforms, list) and algo_transforms:
-                        for transform in algo_transforms:
-                            if isinstance(transform, str):
-                                transform_name = transform
-                            elif isinstance(transform, dict) and 'name' in transform:
-                                transform_name = transform['name']
-                            else:
-                                continue
-                                
-                            # Get parameter grid for this transformer
-                            transform_params = get_param_grid(transform_name, self.grid_search_params)
-                            
-                            # Add to main parameter grid
-                            if transform_params:
-                                param_grid.update(transform_params)
-                    
-                    if param_grid:
-                        # Create CV splitter
-                        cv = get_cv_splitter(
-                            self.cv_params, 
-                            None, 
-                            self.forecast_horizon, 
-                            self.y_train
-                        )
-                        
-                        # Create grid search
-                        try:
-                            grid_search = ForecastingGridSearchCV(
-                                forecaster=algorithm,
-                                param_grid=param_grid,
-                                cv=cv,
-                                scoring=self.METRIC_MAP.get(self.scoring, None),
-                                strategy="refit",
-                                backend="loky",
-                                backend_params={"n_jobs": -1}
-                            )
-                            
-                            # Fit grid search
-                            grid_search.fit(self.y_train)
-                            
-                            # Store best forecaster
-                            self.forecasters[name] = grid_search
-                            self.cv_results[name] = grid_search.cv_results_
-                            
-                            print(f"  Best parameters: {grid_search.best_params_}")
-                            
-                        except Exception as e:
-                            print(f"  Error in grid search for {name}: {str(e)}")
-                            print(f"  Param grid was: {param_grid}")
-                            print(f"  Algorithm was: {type(algorithm).__name__}")
-                            print(f"  Falling back to direct fit...")
-                            
-                            # Fall back to direct fit
-                            algorithm.fit(self.y_train)
-                            self.forecasters[name] = algorithm
-                    else:
-                        # No grid search, just fit
-                        algorithm.fit(self.y_train)
-                        self.forecasters[name] = algorithm
-                else:
-                    # No grid search, just fit
-                    algorithm.fit(self.y_train)
-                    self.forecasters[name] = algorithm
-                
-                print(f"  {name.capitalize()} fitted successfully.")
+                self._fit_single_model(name)
             except Exception as e:
-                print(f"  Error fitting {name}: {str(e)}")
-                print(f"  Algorithm type: {type(algorithm).__name__ if 'algorithm' in locals() else 'Unknown'}")
-                if 'param_grid' in locals():
-                    print(f"  Parameter grid: {param_grid}")
-                if 'algorithm' in locals() and isinstance(algorithm, TransformedTargetForecaster) and hasattr(algorithm, 'steps'):
-                    print(f"  Transformer steps: {algorithm.steps}")
-        
+                print(f"Error fitting {name}: {str(e)}")
         return self
+    
+    def _fit_single_model(self, name):
+        """Helper method to fit a single model."""
+        print(f"Fitting {name}...")
+        algo_transforms = self.transformations.get(name, None)
+        algorithm = get_algorithm(name, algo_transforms, self.seasonal_period)
         
+        if self.grid_search:
+            self._fit_with_grid_search(name, algorithm)
+        else:
+            algorithm.fit(self.y_train)
+            self.forecasters[name] = algorithm
+            
+        print(f"  {name.capitalize()} fitted successfully.")
+
+    def _fit_with_grid_search(self, name, algorithm):
+        """Helper method to fit model with grid search."""
+        param_grid = get_param_grid(name, self.grid_search_params)
+        if not param_grid:
+            algorithm.fit(self.y_train)
+            self.forecasters[name] = algorithm
+            return
+            
+        cv = get_cv_splitter(self.cv_params, None, self.forecast_horizon, self.y_train)
+        
+        try:
+            grid_search = ForecastingGridSearchCV(
+                forecaster=algorithm,
+                param_grid=param_grid,
+                cv=cv,
+                scoring=self.METRIC_MAP.get(self.scoring, None),
+                strategy="refit",
+                backend="loky",
+                backend_params={"n_jobs": -1}
+            )
+            grid_search.fit(self.y_train)
+            self.forecasters[name] = grid_search
+            self.cv_results[name] = grid_search.cv_results_
+            print(f"  Best parameters: {grid_search.best_params_}")
+        except Exception as e:
+            print(f"  Grid search failed, falling back to direct fit: {str(e)}")
+            algorithm.fit(self.y_train)
+            self.forecasters[name] = algorithm
+
     def predict(self):
         """Generate forecasts for all fitted models."""
         if not self.forecasters:

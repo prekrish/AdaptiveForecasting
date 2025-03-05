@@ -8,6 +8,80 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
+def _convert_index_to_datetime(idx):
+    """Convert Period index to datetime if needed."""
+    if hasattr(idx, 'dtype') and str(idx.dtype).startswith('period'):
+        return idx.to_timestamp()
+    return idx
+
+
+def _plot_historical_data(y_train):
+    """Plot historical training data."""
+    y_train_idx = _convert_index_to_datetime(y_train.index)
+    
+    if isinstance(y_train, pd.DataFrame):
+        plt.plot(y_train_idx, y_train.iloc[:, 0], 'k-', label='Historical Data')
+    else:
+        plt.plot(y_train_idx, y_train, 'k-', label='Historical Data')
+
+
+def _plot_test_data(y_test, forecast_horizon):
+    """Plot actual test data."""
+    y_test_idx = _convert_index_to_datetime(y_test.index)
+    
+    if isinstance(y_test, pd.DataFrame):
+        plt.plot(y_test_idx[:forecast_horizon], 
+                y_test.iloc[:forecast_horizon, 0], 
+                'b-', label='Actual')
+    else:
+        plt.plot(y_test_idx[:forecast_horizon], 
+                y_test.iloc[:forecast_horizon], 
+                'b-', label='Actual')
+
+
+def _plot_forecasts(forecasts, models_to_plot, forecast_horizon, best_model):
+    """Plot forecasts for each model."""
+    colors = ['r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray']
+    
+    for i, name in enumerate(models_to_plot):
+        forecast = forecasts[name]
+        color = colors[i % len(colors)]
+        
+        # Highlight best model
+        if name == best_model:
+            linestyle = '--'
+            linewidth = 2.5
+            name = f"Best ({name})"
+        else:
+            linestyle = '-'
+            linewidth = 1.5
+        
+        forecast_idx = _convert_index_to_datetime(forecast.index)
+        
+        if isinstance(forecast, pd.DataFrame):
+            plt.plot(forecast_idx[:forecast_horizon], 
+                    forecast.iloc[:forecast_horizon, 0], 
+                    f'{color}{linestyle}', 
+                    linewidth=linewidth,
+                    label=f'{name.capitalize()} Forecast')
+        else:
+            plt.plot(forecast_idx[:forecast_horizon], 
+                    forecast.iloc[:forecast_horizon], 
+                    f'{color}{linestyle}', 
+                    linewidth=linewidth,
+                    label=f'{name.capitalize()} Forecast')
+
+
+def _format_plot(target):
+    """Format the plot with labels and styling."""
+    plt.title('Time Series Forecast')
+    plt.xlabel('Time')
+    plt.ylabel(target if target else 'Value')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+
+
 def plot_forecasts(y_train, y_test, forecasts, forecast_horizon, 
                    best_model=None, figsize=(12, 6), include_history=True, 
                    models=None, target=''):
@@ -44,85 +118,33 @@ def plot_forecasts(y_train, y_test, forecasts, forecast_horizon,
         print("No forecasts available.")
         return
         
-    # Select models to plot
-    if models is None:
-        models_to_plot = list(forecasts.keys())
-    else:
-        models_to_plot = [m for m in models if m in forecasts]
-        if not models_to_plot:
-            print("None of the specified models found in forecasts.")
-            return
-            
-    # Create figure
+    models_to_plot = _get_models_to_plot(forecasts, models)
+    if not models_to_plot:
+        return
+        
     fig = plt.figure(figsize=figsize)
     
-    # Convert Period index to datetime if needed
-    def convert_index_to_datetime(idx):
-        if hasattr(idx, 'dtype') and str(idx.dtype).startswith('period'):
-            return idx.to_timestamp()
-        return idx
-    
-    # Plot historical data if requested
     if include_history:
-        y_train_idx = convert_index_to_datetime(y_train.index)
-        
-        if isinstance(y_train, pd.DataFrame):
-            plt.plot(y_train_idx, y_train.iloc[:, 0], 'k-', label='Historical Data')
-        else:
-            plt.plot(y_train_idx, y_train, 'k-', label='Historical Data')
-            
-    # Plot actual test data if available
-    if y_test is not None and len(y_test) > 0:
-        y_test_idx = convert_index_to_datetime(y_test.index)
-        
-        if isinstance(y_test, pd.DataFrame):
-            plt.plot(y_test_idx[:forecast_horizon], 
-                     y_test.iloc[:forecast_horizon, 0], 
-                     'b-', label='Actual')
-        else:
-            plt.plot(y_test_idx[:forecast_horizon], 
-                     y_test.iloc[:forecast_horizon], 
-                     'b-', label='Actual')
-            
-    # Plot forecasts
-    colors = ['r', 'g', 'c', 'm', 'y', 'orange', 'purple', 'brown', 'pink', 'gray']
-    for i, name in enumerate(models_to_plot):
-        forecast = forecasts[name]
-        color = colors[i % len(colors)]
-        
-        # Highlight best model
-        if name == best_model:
-            linestyle = '--'
-            linewidth = 2.5
-            name = f"Best ({name})"
-        else:
-            linestyle = '-'
-            linewidth = 1.5
-        
-        forecast_idx = convert_index_to_datetime(forecast.index)
-        
-        if isinstance(forecast, pd.DataFrame):
-            plt.plot(forecast_idx[:forecast_horizon], 
-                     forecast.iloc[:forecast_horizon, 0], 
-                     f'{color}{linestyle}', 
-                     linewidth=linewidth,
-                     label=f'{name.capitalize()} Forecast')
-        else:
-            plt.plot(forecast_idx[:forecast_horizon], 
-                     forecast.iloc[:forecast_horizon], 
-                     f'{color}{linestyle}', 
-                     linewidth=linewidth,
-                     label=f'{name.capitalize()} Forecast')
-            
-    # Add labels and legend
-    plt.title('Time Series Forecast')
-    plt.xlabel('Time')
-    plt.ylabel(target if target else 'Value')
-    plt.legend()
-    plt.grid(True)
-    plt.tight_layout()
+        _plot_historical_data(y_train)
     
+    if y_test is not None and len(y_test) > 0:
+        _plot_test_data(y_test, forecast_horizon)
+        
+    _plot_forecasts(forecasts, models_to_plot, forecast_horizon, best_model)
+    
+    _format_plot(target)
     return fig
+
+
+def _get_models_to_plot(forecasts, models):
+    """Helper to get list of models to plot."""
+    if models is None:
+        return list(forecasts.keys())
+    
+    models_to_plot = [m for m in models if m in forecasts]
+    if not models_to_plot:
+        print("None of the specified models found in forecasts.")
+    return models_to_plot
 
 
 def create_forecast_dataframe(y_test, forecasts, forecast_horizon):

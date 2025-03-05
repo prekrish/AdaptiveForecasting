@@ -40,28 +40,18 @@ def calculate_metrics(y_test, forecast, forecast_horizon):
     dict
         Dictionary of metrics.
     """
-    try:
-        if len(y_test) < forecast_horizon:
-            return None
-            
-        y_test_pred = y_test.iloc[:forecast_horizon]
-        forecast_values = forecast[:len(y_test_pred)]
-        
-        # Calculate metrics properly by calling the metric objects
-        mae = MeanAbsoluteError().evaluate(y_test_pred, forecast_values)
-        mse = MeanSquaredError().evaluate(y_test_pred, forecast_values)
-        rmse = np.sqrt(mse)
-        mape = MeanAbsolutePercentageError().evaluate(y_test_pred, forecast_values)
-        
-        return {
-            'mae': mae,
-            'mse': mse,
-            'rmse': rmse,
-            'mape': mape
-        }
-    except Exception as e:
-        print(f"Warning: Could not calculate metrics: {str(e)}")
+    if len(y_test) < forecast_horizon:
         return None
+        
+    y_test_pred = y_test.iloc[:forecast_horizon]
+    forecast_values = forecast[:len(y_test_pred)]
+    
+    return {
+        'mae': MeanAbsoluteError().evaluate(y_test_pred, forecast_values),
+        'mse': MeanSquaredError().evaluate(y_test_pred, forecast_values),
+        'rmse': np.sqrt(MeanSquaredError().evaluate(y_test_pred, forecast_values)),
+        'mape': MeanAbsolutePercentageError().evaluate(y_test_pred, forecast_values)
+    }
 
 
 def format_metrics_dataframe(metrics):

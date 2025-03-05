@@ -27,47 +27,33 @@ def get_cv_splitter(cv_params=None, cv_initial_window=None, forecast_horizon=10,
     object
         CV splitter instance.
     """
-    print(f"CV params: {cv_params}")
-    if cv_params is None:
-        cv_params = {}
-    
+    cv_params = cv_params or {}
     method = cv_params.get('method', 'expanding')
     step_length = cv_params.get('step', 1)
     
-    # Determine initial window size if not provided
-    if cv_initial_window is None:
-        if y_train is not None:
-            # Default to 70% of training data
-            initial_window = max(2, int(len(y_train) * 0.7))
-        else:
-            # Use a reasonable default
-            initial_window = 10
-    else:
-        initial_window = cv_initial_window
-    
-    # Ensure initial window is at least 2 observations
-    initial_window = max(initial_window, 2)
-    
-    # Create forecasting horizon for CV
+    initial_window = _calculate_initial_window(cv_initial_window, y_train)
     fh = np.arange(1, forecast_horizon + 1)
     
-    if method.lower() == 'expanding':
-        return ExpandingWindowSplitter(
-            initial_window=initial_window,
-            step_length=step_length,
-            fh=fh
-        )
-    elif method.lower() == 'sliding':
+    if method.lower() == 'sliding':
         window_length = cv_params.get('window_length', initial_window)
         return SlidingWindowSplitter(
             window_length=window_length,
             step_length=step_length,
             fh=fh
         )
-    else:
-        print(f"Warning: Unknown CV method '{method}'. Using ExpandingWindowSplitter.")
-        return ExpandingWindowSplitter(
-            initial_window=initial_window,
-            step_length=step_length,
-            fh=fh
-        )
+    
+    return ExpandingWindowSplitter(
+        initial_window=initial_window,
+        step_length=step_length,
+        fh=fh
+    )
+
+def _calculate_initial_window(cv_initial_window, y_train):
+    """Calculate initial window size for CV."""
+    if cv_initial_window is not None:
+        return max(cv_initial_window, 2)
+    
+    if y_train is not None:
+        return max(2, int(len(y_train) * 0.7))
+    
+    return 10
